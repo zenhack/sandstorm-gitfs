@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"io"
+	"io/ioutil"
 	"sort"
 
 	"zenhack.net/go/sandstorm-filesystem/filesystem"
@@ -123,17 +124,33 @@ func (f *File) Stat(p filesystem.Node_stat) error {
 }
 
 func (f *File) Read(p filesystem.File_read) error {
-	// FIXME: don't ignore startAt and amount.
+	var src io.Reader
+
+	startAt := int64(p.Params.StartAt())
+	amount := int64(p.Params.Amount())
+
 	r, err := f.g.ReadFile(&f.Hash)
 	if err != nil {
 		return err
 	}
 	defer r.Close()
+
+	if startAt > 0 {
+		prefix := io.LimitReader(r, startAt)
+		_, err = io.Copy(ioutil.Discard, prefix)
+
+	}
+	if amount > 0 {
+		src = io.LimitReader(r, amount)
+	} else {
+		src = r
+	}
+
 	bs := &util.ByteStreamWriteCloser{
 		Ctx: p.Ctx,
 		Obj: p.Params.Sink(),
 	}
-	_, err = io.Copy(bs, r)
+	_, err = io.Copy(bs, src)
 	if err != nil {
 		return err
 	}
