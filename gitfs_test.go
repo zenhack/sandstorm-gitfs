@@ -152,3 +152,19 @@ func TestContents(t *testing.T) {
 		t.Fatal("Unexpected output: %q", actual)
 	}
 }
+
+// Test walking into a file that doesn't exist.
+func TestAbsentFile(t *testing.T) {
+	ctx := context.TODO()
+	root := getTreeRoot()
+
+	_, err := root.Walk(ctx, func(p filesystem.Directory_walk_Params) error {
+		p.SetName("absent-file")
+		return nil
+	}).Struct()
+	if err == nil {
+		t.Fatal("Walk(\"absent-file\") succeeded; should have failed.")
+	} else if err != NoSuchFileError {
+		t.Fatal(err)
+	}
+}
