@@ -68,5 +68,7 @@ func TestRootDir(t *testing.T) {
 	if info.Which() != filesystem.StatInfo_Which_file {
 		t.Fatal("Wrong type from stat()")
 	}
-	// TODO: check size
+	if info.File().Size() != 3327 {
+		t.Fatal("Wrong size for types.go:", info.Size())
+	}
 }
