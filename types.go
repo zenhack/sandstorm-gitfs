@@ -161,6 +161,7 @@ func statTreeEntry(g *git.Git, e *git.TreeEntry, info filesystem.StatInfo) error
 	switch e.Type {
 	case "tree":
 		info.SetDir()
+		info.SetExecutable(true)
 	case "blob":
 		info.SetFile()
 		sz, err := g.GetFileSize(&e.Hash)
@@ -168,9 +169,8 @@ func statTreeEntry(g *git.Git, e *git.TreeEntry, info filesystem.StatInfo) error
 			return err
 		}
 		info.File().SetSize(int64(sz))
+		info.SetExecutable(e.Mode&0100 != 0)
 	}
-
-	info.SetExecutable(e.Mode&0100 != 0)
 	info.SetWritable(false)
 	return nil
 }
