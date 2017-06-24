@@ -30,7 +30,7 @@ func (g *Git) Command(args ...string) *exec.Cmd {
 }
 
 func (g *Git) GetFileSize(h *Hash) (int64, error) {
-	out, err := g.Command("git", "cat-file", "-s", h.String()).Output()
+	out, err := g.Command("cat-file", "-s", h.String()).Output()
 	if err != nil {
 		return 0, err
 	}
@@ -45,14 +45,21 @@ func (g *Git) LsTree(h *Hash) ([]TreeEntry, error) {
 		return nil, err
 	}
 	lines := strings.Split(string(out), "\n")
+	if len(lines) != 0 && lines[len(lines)-1] == "" {
+		// Strip the trailing blank line. This if statement should theoretically always be
+		// executed, but we check just in case.
+		lines = lines[:len(lines)-1]
+	}
 	ents := make([]TreeEntry, len(lines))
 	for i := range lines {
-		_, err = fmt.Sscanf(lines[i], "%o %s %040x    %s",
+		hSlice := make([]byte, len(ents[i].Hash))
+		_, err = fmt.Sscanf(lines[i], "%o %s %040x\t%s",
 			&ents[i].Mode,
 			&ents[i].Type,
-			&ents[i].Hash,
+			&hSlice,
 			&ents[i].Name,
 		)
+		copy(ents[i].Hash[:], hSlice)
 		if err != nil {
 			return nil, err
 		}
