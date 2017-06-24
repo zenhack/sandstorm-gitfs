@@ -48,15 +48,7 @@ func TestRootDir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !info.Executable() {
-		t.Fatal("Git directories should be executable!")
-	}
-	if info.Writable() {
-		t.Fatal("Git objects should be read-only!")
-	}
-	if info.Which() != filesystem.StatInfo_Which_dir {
-		t.Fatal("Wrong type from stat()")
-	}
+	checkDirStatInfo(t, info)
 }
 
 // Validate the StatInfo for types.go in the test tree.
@@ -73,18 +65,7 @@ func TestRegularFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Executable() {
-		t.Fatal("types.go should not be executable")
-	}
-	if info.Writable() {
-		t.Fatal("Git objects should be read-only!")
-	}
-	if info.Which() != filesystem.StatInfo_Which_file {
-		t.Fatal("Wrong type from stat()")
-	}
-	if info.File().Size() != 3327 {
-		t.Fatal("Wrong size for types.go:", info.Size())
-	}
+	checkFileStatInfo(t, info, false, 3327)
 }
 
 // Validate the StatInfo for the `git`subdir in the test tree.
@@ -100,15 +81,7 @@ func TestSubDir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !info.Executable() {
-		t.Fatal("Git directories should be executable!")
-	}
-	if info.Writable() {
-		t.Fatal("Git objects should be read-only!")
-	}
-	if info.Which() != filesystem.StatInfo_Which_dir {
-		t.Fatal("Wrong type from stat()")
-	}
+	checkDirStatInfo(t, info)
 }
 
 // Validate the contents of /types.go in the test tree.
@@ -166,5 +139,91 @@ func TestAbsentFile(t *testing.T) {
 		t.Fatal("Walk(\"absent-file\") succeeded; should have failed.")
 	} else if err != NoSuchFileError {
 		t.Fatal(err)
+	}
+}
+
+// Test listing the root directory.
+func TestList(t *testing.T) {
+	stream := &testStream{ents: []filesystem.Directory_Entry{}}
+	client := filesystem.Directory_Entry_Stream_ServerToClient(stream)
+
+	root := getTreeRoot()
+	ctx := context.TODO()
+	_, err := root.List(ctx, func(p filesystem.Directory_list_Params) error {
+		p.SetStream(client)
+		return nil
+	}).Struct()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(stream.ents) != 2 {
+		t.Fatalf("Expected 2 results, but got %d.", len(stream.ents))
+	}
+
+	for i, expected := range []string{"git", "types.go"} {
+		actual, err := stream.ents[i].Name()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if actual != expected {
+			t.Fatalf("Dirent %d: expected name %q but got %q", i, expected, actual)
+		}
+	}
+	info, err := stream.ents[0].Info()
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkDirStatInfo(t, info)
+	info, err = stream.ents[1].Info()
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkFileStatInfo(t, info, false, 3327)
+}
+
+type testStream struct {
+	ents []filesystem.Directory_Entry
+}
+
+func (t *testStream) Push(p filesystem.Directory_Entry_Stream_push) error {
+	ents, err := p.Params.Entries()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < ents.Len(); i++ {
+		t.ents = append(t.ents, ents.At(i))
+	}
+	return nil
+}
+
+func (t *testStream) Done(p filesystem.Directory_Entry_Stream_done) error {
+	return nil
+}
+
+func checkDirStatInfo(t *testing.T, info filesystem.StatInfo) {
+	if !info.Executable() {
+		t.Fatal("Git directories should be executable!")
+	}
+	if info.Writable() {
+		t.Fatal("Git objects should be read-only!")
+	}
+	if info.Which() != filesystem.StatInfo_Which_dir {
+		t.Fatal("Wrong type from stat()")
+	}
+}
+
+func checkFileStatInfo(t *testing.T, info filesystem.StatInfo, executable bool, size int64) {
+	if info.Executable() != executable {
+		t.Fatal("File execute bit is wrong")
+	}
+	if info.Writable() {
+		t.Fatal("Git objects should be read-only!")
+	}
+	if info.Which() != filesystem.StatInfo_Which_file {
+		t.Fatal("Wrong type from stat()")
+	}
+	if info.File().Size() != size {
+		t.Fatalf("Wrong size for file; expected %d but got %d.", size, info.Size())
 	}
 }
