@@ -1,0 +1,5 @@
+# Coverage profiles:
+coverage.out
+
+# vim swap files:
+*.swp
