@@ -3,13 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"os"
 	"testing"
 
 	"zenhack.net/go/sandstorm-filesystem/filesystem"
-	util_capnp "zenhack.net/go/sandstorm/capnp/util"
 	"zenhack.net/go/sandstorm/util"
 
 	"zenhack.net/go/sandstorm-gitfs/git"
@@ -92,8 +90,7 @@ func TestContents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r, w := io.Pipe()
-	bs := util_capnp.ByteStream_ServerToClient(&util.WriteCloserByteStream{WC: w})
+	r, bs := util.ByteStreamPipe()
 
 	ctx := context.TODO()
 	root := getTreeRoot()
@@ -123,6 +120,73 @@ func TestContents(t *testing.T) {
 	actual := string(buf)
 	if actual != expected {
 		t.Fatal("Unexpected output: %q", actual)
+	}
+}
+
+// Test read with startAt and amount parameters.
+func TestChunkedReads(t *testing.T) {
+	expected, err := ioutil.ReadFile("testdata/types.go-frozen")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.TODO()
+	file := filesystem.File{
+		Client: getTreeRoot().Walk(ctx, func(p filesystem.Directory_walk_Params) error {
+			p.SetName("types.go")
+			return nil
+		}).Node().Client,
+	}
+	rStart, wStart := util.ByteStreamPipe()
+	rMid, wMid := util.ByteStreamPipe()
+	rEnd, wEnd := util.ByteStreamPipe()
+
+	midStart := 80
+	midAmount := 100
+
+	file.Read(ctx, func(p filesystem.File_read_Params) error {
+		p.SetStartAt(int64(midStart))
+		p.SetAmount(uint64(midAmount))
+		p.SetSink(wMid)
+		return nil
+	})
+	midActual, err := ioutil.ReadAll(rMid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	midExpected := expected[midStart : midStart+midAmount]
+	if string(midActual) != string(midExpected) {
+		t.Fatalf("Error in middle read: expected %q but got %q",
+			midExpected, midActual)
+	}
+
+	file.Read(ctx, func(p filesystem.File_read_Params) error {
+		p.SetAmount(uint64(midStart))
+		p.SetSink(wStart)
+		return nil
+	})
+	startActual, err := ioutil.ReadAll(rStart)
+	if err != nil {
+		t.Fatal(err)
+	}
+	startExpected := expected[:midStart]
+	if string(startActual) != string(startExpected) {
+		t.Fatalf("Error in start read: expected %q but got %q",
+			startExpected, startActual)
+	}
+
+	file.Read(ctx, func(p filesystem.File_read_Params) error {
+		p.SetStartAt(int64(midStart + midAmount))
+		p.SetSink(wEnd)
+		return nil
+	})
+	endActual, err := ioutil.ReadAll(rEnd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	endExpected := expected[midStart+midAmount:]
+	if string(endActual) != string(endExpected) {
+		t.Fatalf("Error in end read: expected %q but got %q",
+			endExpected, endActual)
 	}
 }
 
