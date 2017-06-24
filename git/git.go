@@ -11,7 +11,7 @@ import (
 type Hash [sha1.Size]byte
 
 func (h *Hash) String() string {
-	return fmt.Sprintf("%040x", h)
+	return fmt.Sprintf("%040x", h[:])
 }
 
 type TreeEntry struct {
