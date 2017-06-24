@@ -3,10 +3,14 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"os"
 	"testing"
 
 	"zenhack.net/go/sandstorm-filesystem/filesystem"
+	util_capnp "zenhack.net/go/sandstorm/capnp/util"
+	"zenhack.net/go/sandstorm/util"
 
 	"zenhack.net/go/sandstorm-gitfs/git"
 )
@@ -104,5 +108,47 @@ func TestSubDir(t *testing.T) {
 	}
 	if info.Which() != filesystem.StatInfo_Which_dir {
 		t.Fatal("Wrong type from stat()")
+	}
+}
+
+// Validate the contents of /types.go in the test tree.
+func TestContents(t *testing.T) {
+	// We've saved the old contents as testdata/types.go-frozen for comparison:
+	buf, err := ioutil.ReadFile("testdata/types.go-frozen")
+	expected := string(buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, w := io.Pipe()
+	bs := util_capnp.ByteStream_ServerToClient(&util.WriteCloserByteStream{WC: w})
+
+	ctx := context.TODO()
+	root := getTreeRoot()
+	file := filesystem.File{
+		Client: root.Walk(ctx, func(p filesystem.Directory_walk_Params) error {
+			p.SetName("types.go")
+			return nil
+		}).Node().Client,
+	}
+
+	result := file.Read(ctx, func(p filesystem.File_read_Params) error {
+		p.SetSink(bs)
+		return nil
+	})
+
+	buf, err = ioutil.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Wait for the call to return:
+	_, err = result.Struct()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	actual := string(buf)
+	if actual != expected {
+		t.Fatal("Unexpected output: %q", actual)
 	}
 }

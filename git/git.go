@@ -68,7 +68,13 @@ func (g *Git) LsTree(h *Hash) ([]TreeEntry, error) {
 }
 
 func (g *Git) ReadFile(h *Hash) (io.ReadCloser, error) {
-	return g.Command("git", "cat-file", h.String()).StdoutPipe()
+	cmd := g.Command("cat-file", "-p", h.String())
+	pipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	// TODO: pretty sure we're leaking zombies here.
+	return pipe, cmd.Start()
 }
 
 func InitBare(path string) (*Git, error) {
