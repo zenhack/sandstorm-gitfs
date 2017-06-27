@@ -174,7 +174,3 @@ func statTreeEntry(g *git.Git, e *git.TreeEntry, info filesystem.StatInfo) error
 	info.SetWritable(false)
 	return nil
 }
-
-func main() {
-
-}

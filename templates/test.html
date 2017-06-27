@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>{{ .RepoName }}</title>
+	</head>
+	<body>
+		<h1>{{ .RepoName }}</h1>
+
+		<table>
+			{{ range .Files }}
+			<tr>
+				<td>
+					{{ if eq .Type "blob" }}
+					File
+					{{ else if eq .Type "tree" }}
+					Dir
+					{{ end }}
+				</td>
+				<td>
+					{{ .Name }}
+				</td>
+			</tr>
+			{{ end }}
+	</body>
+</html>

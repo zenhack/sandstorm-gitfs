@@ -1,5 +1,8 @@
 # Coverage profiles:
 coverage.out
 
+# The executable:
+/sandstorm-gitfs
+
 # vim swap files:
 *.swp
