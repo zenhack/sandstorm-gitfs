@@ -1,6 +1,7 @@
 package git
 
 import (
+	"bufio"
 	"crypto/sha1"
 	"fmt"
 	"io"
@@ -12,6 +13,16 @@ type Hash [sha1.Size]byte
 
 func (h *Hash) String() string {
 	return fmt.Sprintf("%040x", h[:])
+}
+
+func parseHash(s string) (h Hash, err error) {
+	hSlice := make([]byte, len(h))
+	_, err = fmt.Sscanf(s, "%040x", &hSlice)
+	if err != nil {
+		return
+	}
+	copy(h[:], hSlice)
+	return
 }
 
 type TreeEntry struct {
@@ -67,6 +78,26 @@ func (g *Git) LsTree(h *Hash) ([]TreeEntry, error) {
 	return ents, nil
 }
 
+func (g *Git) GetCommitTree(ref string) (h Hash, err error) {
+	cmd := g.Command("show", ref, "--format=%T")
+	pipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return
+	}
+	err = cmd.Start()
+	if err != nil {
+		return
+	}
+	r := bufio.NewReader(pipe)
+	buf, err := r.ReadString('\n')
+	if err != nil {
+		return
+	}
+	pipe.Close()
+	cmd.Wait()
+	return parseHash(buf)
+}
+
 func (g *Git) ReadFile(h *Hash) (io.ReadCloser, error) {
 	cmd := g.Command("cat-file", "-p", h.String())
 	pipe, err := cmd.StdoutPipe()
@@ -75,6 +106,10 @@ func (g *Git) ReadFile(h *Hash) (io.ReadCloser, error) {
 	}
 	// TODO: pretty sure we're leaking zombies here.
 	return pipe, cmd.Start()
+}
+
+func (g *Git) SetConfig(option, value string) error {
+	return g.Command("config", option, value).Run()
 }
 
 func InitBare(path string) (*Git, error) {

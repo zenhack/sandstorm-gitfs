@@ -6,12 +6,14 @@ import (
 	"net/http"
 	"net/http/cgi"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/gorilla/mux"
 
 	"zenhack.net/go/sandstorm-gitfs/git"
+
+	"zenhack.net/go/sandstorm-filesystem/filesystem"
+	"zenhack.net/go/sandstorm-filesystem/filesystem/httpfs"
 )
 
 func mustEnv(key string) string {
@@ -30,7 +32,7 @@ type TemplateArg struct {
 	Files    []git.TreeEntry
 }
 
-func ensureRepo(gitProjectRoot string) {
+func ensureRepo(gitProjectRoot string) *git.Git {
 	err := os.MkdirAll(gitProjectRoot+"/r", 0700)
 	if err != nil {
 		log.Fatal("Creating %s: %v", gitProjectRoot, err)
@@ -38,31 +40,26 @@ func ensureRepo(gitProjectRoot string) {
 	repoPath := gitProjectRoot + "/r/_repo.git"
 	fi, err := os.Stat(repoPath)
 	if !(err == nil && fi.IsDir()) {
-		err = exec.Command("git", "init", "--bare", repoPath).Run()
+		g, err := git.InitBare(repoPath)
 		if err != nil {
 			log.Fatal("Creating repository:", err)
 		}
-		err = exec.Command("git", "--git-dir="+repoPath, "config",
-			"http.receivepack", "true").Run()
+		err = g.SetConfig("http.receivepack", "true")
 		if err != nil {
 			log.Fatal("Enabling push:", err)
 		}
+		return g
 	}
+	return &git.Git{GitDir: repoPath}
 }
 
 func main() {
-	ensureRepo(mustEnv("GIT_PROJECT_ROOT"))
+	g := ensureRepo(mustEnv("GIT_PROJECT_ROOT"))
 
 	r := mux.NewRouter()
 	r.Path("/").HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		tpls.ExecuteTemplate(w, "test.html", &TemplateArg{
-			RepoName: "My silly project",
-			Files: []git.TreeEntry{
-				{Name: "README.md", Type: "blob"},
-				{Name: "src", Type: "tree"},
-				{Name: ".gitignore", Type: "blob"},
-			},
-		})
+		w.Header().Set("Location", "/browse/master")
+		w.WriteHeader(http.StatusSeeOther) // TODO: correct status?
 	})
 	// Handle requests from git itself. We alias /r/* to the repo, so the
 	// user can clone it by any name.
@@ -81,6 +78,41 @@ func main() {
 		req.URL.Path = strings.Join(parts, "/")
 		gitHandler.ServeHTTP(w, req)
 	})
+	r.PathPrefix("/browse/{commit}").HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		commit := mux.Vars(req)["commit"]
+		h, err := g.GetCommitTree(commit)
+		if err != nil {
+			// TODO: be more methodical. For now, we just assume any error is
+			// a missing commit/branch.
+			log.Print(err)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		tree := filesystem.Directory_ServerToClient(&Dir{
+			TreeEntry: git.TreeEntry{
+				Hash: h,
+				Type: "tree",
+			},
+			g: *g,
+		})
+		http.FileServer(&PrefixStripper{
+			FS:     &httpfs.FileSystem{tree},
+			Prefix: "/browse/" + commit,
+		}).ServeHTTP(w, req)
+	})
 	http.Handle("/", r)
 	http.ListenAndServe(":8080", nil)
+}
+
+type PrefixStripper struct {
+	FS     http.FileSystem
+	Prefix string
+}
+
+func (ps *PrefixStripper) Open(name string) (http.File, error) {
+	if !strings.HasPrefix(name, ps.Prefix) {
+		panic(name + " does not have expected prefix")
+	}
+	name = string([]byte(name)[len(ps.Prefix):])
+	return ps.FS.Open(name)
 }

@@ -77,10 +77,12 @@ func (d *Dir) Walk(p filesystem.Directory_walk) error {
 	if err != nil {
 		return err
 	}
-
 	i := sort.Search(len(d.contents), func(i int) bool {
 		return d.contents[i].Name >= name
 	})
+	if i == len(d.contents) {
+		return NoSuchFileError
+	}
 	ent := d.contents[i]
 	if ent.Name != name {
 		return NoSuchFileError
