@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"html/template"
 	"log"
 	"net/http"
@@ -14,6 +15,12 @@ import (
 
 	"zenhack.net/go/sandstorm-filesystem/filesystem"
 	"zenhack.net/go/sandstorm-filesystem/filesystem/httpfs"
+
+	grain_capnp "zenhack.net/go/sandstorm/capnp/grain"
+	"zenhack.net/go/sandstorm/grain"
+	"zenhack.net/go/sandstorm/websession"
+
+	"zombiezen.com/go/capnproto2/pogs"
 )
 
 func mustEnv(key string) string {
@@ -100,8 +107,28 @@ func main() {
 			Prefix: "/browse/" + commit,
 		}).ServeHTTP(w, req)
 	})
-	http.Handle("/", r)
-	http.ListenAndServe(":8080", nil)
+	if os.Getenv("SANDSTORM") != "1" {
+		http.ListenAndServe(":8080", r)
+	} else {
+		uiView := websession.FromHandler(r).
+			WithViewInfo(func(p grain_capnp.UiView_getViewInfo) error {
+				pogs.Insert(grain_capnp.UiView_ViewInfo_TypeID, p.Results.Struct, viewInfo{
+					MatchRequests: []PowerboxDescriptor{{Tags: []Tag{
+						{Id: filesystem.Node_TypeID},
+						{Id: filesystem.Directory_TypeID},
+					}}},
+				})
+				return nil
+			})
+		ctx := context.Background()
+		_, err := grain.ConnectAPI(ctx, grain_capnp.UiView{
+			Client: grain_capnp.UiView_ServerToClient(uiView).Client,
+		})
+		if err != nil {
+			log.Fatal(err)
+		}
+		<-ctx.Done()
+	}
 }
 
 type PrefixStripper struct {
