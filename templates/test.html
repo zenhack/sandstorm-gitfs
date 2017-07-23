@@ -3,10 +3,14 @@
 	<head>
 		<meta charset="utf-8" />
 		<title>{{ .RepoName }}</title>
+		<script src="/offer-iframe.js"></script>
 	</head>
 	<body>
 		<h1>{{ .RepoName }}</h1>
 
+		<iframe id="offer-iframe" />
+
+    <!--
 		<table>
 			{{ range .Files }}
 			<tr>
@@ -22,5 +26,6 @@
 				</td>
 			</tr>
 			{{ end }}
+		-->
 	</body>
 </html>

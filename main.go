@@ -32,7 +32,7 @@ func mustEnv(key string) string {
 	return val
 }
 
-var tpls = template.Must(template.ParseGlob("templates/*.html"))
+var tpls = template.Must(template.ParseGlob("templates/*.*"))
 
 type TemplateArg struct {
 	RepoName string
@@ -65,8 +65,14 @@ func main() {
 
 	r := mux.NewRouter()
 	r.Path("/").HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		w.Header().Set("Location", "/browse/master")
-		w.WriteHeader(http.StatusSeeOther) // TODO: correct status?
+		_, err := g.GetCommitTree("master")
+		if err == nil {
+			w.Header().Set("Location", "/browse/master")
+			w.WriteHeader(http.StatusSeeOther) // TODO: correct status?
+			return
+		}
+
+		tpls.ExecuteTemplate(w, "test.html", struct{ RepoName string }{"My Repo"})
 	})
 	// Handle requests from git itself. We alias /r/* to the repo, so the
 	// user can clone it by any name.
@@ -107,10 +113,17 @@ func main() {
 			Prefix: "/browse/" + commit,
 		}).ServeHTTP(w, req)
 	})
+	r.Path("/offer-iframe.js").HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		tpls.ExecuteTemplate(w, "offer-iframe.js", struct{ RepoSlug string }{"my-repo"})
+	})
+	http.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
+		log.Println(req.Method, req.URL.Path)
+		r.ServeHTTP(w, req)
+	})
 	if os.Getenv("SANDSTORM") != "1" {
-		http.ListenAndServe(":8080", r)
+		http.ListenAndServe(":8080", nil)
 	} else {
-		uiView := websession.FromHandler(r).
+		uiView := websession.FromHandler(http.DefaultServeMux).
 			WithViewInfo(func(p grain_capnp.UiView_getViewInfo) error {
 				pogs.Insert(grain_capnp.UiView_ViewInfo_TypeID, p.Results.Struct, viewInfo{
 					MatchRequests: []PowerboxDescriptor{{Tags: []Tag{
